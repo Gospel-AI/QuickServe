@@ -1,0 +1,588 @@
+openapi: 3.1.0
+info:
+  title: QuickServe API
+  version: 1.0.0
+  description: |
+    QuickServe API - 地域の熟練ワーカーのためのサービス予約プラットフォーム
+
+    ## 認証
+    すべての保護されたエンドポイントは Bearer トークンを必要とします。
+    `Authorization: Bearer <token>` ヘッダーを含めてください。
+
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Development server
+  - url: https://api.quickserve.com/api/v1
+    description: Production server
+
+tags:
+  - name: Auth
+    description: 認証関連のエンドポイント
+  - name: Users
+    description: ユーザー管理
+  - name: Workers
+    description: ワーカー管理
+  - name: Categories
+    description: サービスカテゴリー
+  - name: Bookings
+    description: 予約管理
+  - name: Payments
+    description: 決済
+  - name: Reviews
+    description: レビュー
+
+paths:
+  /auth/otp/send:
+    post:
+      tags: [Auth]
+      summary: OTP送信
+      description: 電話番号にOTPを送信
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  type: string
+                  example: "0241234567"
+      responses:
+        '200':
+          description: OTP送信成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /auth/otp/verify:
+    post:
+      tags: [Auth]
+      summary: OTP検証
+      description: OTPを検証してトークンを取得
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, code]
+              properties:
+                phone:
+                  type: string
+                  example: "0241234567"
+                code:
+                  type: string
+                  example: "123456"
+      responses:
+        '200':
+          description: 認証成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/AuthResponse'
+
+  /users/me:
+    get:
+      tags: [Users]
+      summary: 現在のユーザー取得
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: ユーザー情報
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/User'
+    patch:
+      tags: [Users]
+      summary: プロフィール更新
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserInput'
+      responses:
+        '200':
+          description: 更新成功
+
+  /workers/search:
+    get:
+      tags: [Workers]
+      summary: 近隣ワーカー検索
+      parameters:
+        - name: categoryId
+          in: query
+          schema:
+            type: string
+        - name: latitude
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: longitude
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: radiusKm
+          in: query
+          schema:
+            type: number
+            default: 10
+      responses:
+        '200':
+          description: ワーカー一覧
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WorkerSearchResult'
+
+  /workers/register:
+    post:
+      tags: [Workers]
+      summary: ワーカー登録
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterWorkerInput'
+      responses:
+        '201':
+          description: 登録成功
+
+  /workers/{id}:
+    get:
+      tags: [Workers]
+      summary: ワーカー詳細取得
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ワーカー詳細
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/WorkerProfile'
+
+  /categories:
+    get:
+      tags: [Categories]
+      summary: カテゴリー一覧
+      responses:
+        '200':
+          description: カテゴリー一覧
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+
+  /bookings:
+    post:
+      tags: [Bookings]
+      summary: 予約作成
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingInput'
+      responses:
+        '201':
+          description: 予約作成成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Booking'
+
+  /bookings/{id}:
+    get:
+      tags: [Bookings]
+      summary: 予約詳細取得
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 予約詳細
+
+  /bookings/{id}/status:
+    patch:
+      tags: [Bookings]
+      summary: 予約ステータス更新
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [ACCEPTED, WORKER_EN_ROUTE, IN_PROGRESS, COMPLETED, CANCELLED]
+      responses:
+        '200':
+          description: 更新成功
+
+  /payments/initiate:
+    post:
+      tags: [Payments]
+      summary: 支払い開始
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bookingId, method]
+              properties:
+                bookingId:
+                  type: string
+                method:
+                  type: string
+                  enum: [MTN_MOMO, VODAFONE_CASH, CASH]
+                phone:
+                  type: string
+      responses:
+        '200':
+          description: 支払い開始成功
+
+  /reviews:
+    post:
+      tags: [Reviews]
+      summary: レビュー投稿
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewInput'
+      responses:
+        '201':
+          description: レビュー作成成功
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        avatarUrl:
+          type: string
+        role:
+          type: string
+          enum: [CUSTOMER, WORKER, ADMIN]
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, SUSPENDED, PENDING_VERIFICATION]
+
+    UpdateUserInput:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        avatarUrl:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        address:
+          type: string
+
+    WorkerSearchResult:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        avatarUrl:
+          type: string
+        averageRating:
+          type: number
+        totalReviews:
+          type: integer
+        distance:
+          type: number
+          description: Distance in kilometers
+
+    WorkerProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        bio:
+          type: string
+        averageRating:
+          type: number
+        totalReviews:
+          type: integer
+        totalJobsCompleted:
+          type: integer
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkerService'
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/Review'
+
+    WorkerService:
+      type: object
+      properties:
+        id:
+          type: string
+        categoryId:
+          type: string
+        basePrice:
+          type: number
+        priceUnit:
+          type: string
+          enum: [per_job, per_hour]
+        category:
+          $ref: '#/components/schemas/Category'
+
+    RegisterWorkerInput:
+      type: object
+      required: [idCardUrl, services]
+      properties:
+        bio:
+          type: string
+        idCardUrl:
+          type: string
+        services:
+          type: array
+          items:
+            type: object
+            required: [categoryId, basePrice]
+            properties:
+              categoryId:
+                type: string
+              basePrice:
+                type: number
+              priceUnit:
+                type: string
+                enum: [per_job, per_hour]
+              description:
+                type: string
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        nameLocal:
+          type: string
+        description:
+          type: string
+        iconUrl:
+          type: string
+        activeWorkersCount:
+          type: integer
+
+    CreateBookingInput:
+      type: object
+      required: [categoryId, description, latitude, longitude, address]
+      properties:
+        categoryId:
+          type: string
+        workerId:
+          type: string
+        description:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        address:
+          type: string
+        scheduledAt:
+          type: string
+          format: date-time
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: string
+        customerId:
+          type: string
+        workerId:
+          type: string
+        categoryId:
+          type: string
+        description:
+          type: string
+        address:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, ACCEPTED, WORKER_EN_ROUTE, IN_PROGRESS, COMPLETED, CANCELLED, DISPUTED]
+        estimatedPrice:
+          type: number
+        finalPrice:
+          type: number
+        scheduledAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateReviewInput:
+      type: object
+      required: [bookingId, rating]
+      properties:
+        bookingId:
+          type: string
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+
+    Review:
+      type: object
+      properties:
+        id:
+          type: string
+        rating:
+          type: integer
+        comment:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        customer:
+          type: object
+          properties:
+            firstName:
+              type: string
+            lastName:
+              type: string
+            avatarUrl:
+              type: string

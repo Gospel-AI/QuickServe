@@ -1,0 +1,374 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// User & Authentication
+// ============================================
+
+enum UserRole {
+  CUSTOMER
+  WORKER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+model User {
+  id            String     @id @default(cuid())
+  phone         String     @unique
+  email         String?    @unique
+  passwordHash  String?
+  firstName     String?
+  lastName      String?
+  avatarUrl     String?
+  role          UserRole   @default(CUSTOMER)
+  status        UserStatus @default(PENDING_VERIFICATION)
+
+  // Location (for customers)
+  latitude      Float?
+  longitude     Float?
+  address       String?
+
+  // Timestamps
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  lastLoginAt   DateTime?
+
+  // Relations
+  worker              Worker?
+  customerBookings    Booking[]  @relation("CustomerBookings")
+  reviewsGiven        Review[]   @relation("ReviewsGiven")
+  sentMessages        ChatMessage[] @relation("SentMessages")
+  conversations       ConversationParticipant[]
+  notifications       Notification[]
+  otpCodes            OtpCode[]
+
+  @@index([phone])
+  @@index([status])
+  @@map("users")
+}
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  userId    String
+  code      String
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, code])
+  @@map("otp_codes")
+}
+
+// ============================================
+// Worker & Services
+// ============================================
+
+enum WorkerVerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+model Worker {
+  id                    String                   @id @default(cuid())
+  userId                String                   @unique
+  bio                   String?
+  idCardUrl             String?
+  verificationStatus    WorkerVerificationStatus @default(PENDING)
+  verifiedAt            DateTime?
+
+  // Availability
+  isOnline              Boolean                  @default(false)
+  currentLatitude       Float?
+  currentLongitude      Float?
+
+  // Stats
+  totalJobsCompleted    Int                      @default(0)
+  averageRating         Float                    @default(0)
+  totalReviews          Int                      @default(0)
+
+  // Timestamps
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  // Relations
+  user                  User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services              WorkerService[]
+  bookings              Booking[]                @relation("WorkerBookings")
+  reviewsReceived       Review[]                 @relation("ReviewsReceived")
+
+  @@index([verificationStatus])
+  @@index([isOnline])
+  @@index([currentLatitude, currentLongitude])
+  @@map("workers")
+}
+
+model ServiceCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  nameLocal   String?  // Local language name (e.g., Twi)
+  description String?
+  iconUrl     String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  workerServices WorkerService[]
+  bookings       Booking[]
+
+  @@index([isActive])
+  @@map("service_categories")
+}
+
+model WorkerService {
+  id              String          @id @default(cuid())
+  workerId        String
+  categoryId      String
+
+  // Pricing
+  basePrice       Float
+  priceUnit       String          @default("per_job") // per_job, per_hour
+  description     String?
+
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  worker          Worker          @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  category        ServiceCategory @relation(fields: [categoryId], references: [id])
+
+  @@unique([workerId, categoryId])
+  @@index([categoryId])
+  @@map("worker_services")
+}
+
+// ============================================
+// Bookings
+// ============================================
+
+enum BookingStatus {
+  PENDING           // Customer created, waiting for worker
+  ACCEPTED          // Worker accepted
+  WORKER_EN_ROUTE   // Worker is on the way
+  IN_PROGRESS       // Service started
+  COMPLETED         // Service completed
+  CANCELLED         // Cancelled by customer or worker
+  DISPUTED          // Under dispute
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model Booking {
+  id              String        @id @default(cuid())
+  customerId      String
+  workerId        String?
+  categoryId      String
+
+  // Service details
+  description     String
+
+  // Location
+  latitude        Float
+  longitude       Float
+  address         String
+
+  // Status
+  status          BookingStatus  @default(PENDING)
+
+  // Pricing
+  estimatedPrice  Float?
+  finalPrice      Float?
+
+  // Scheduling
+  scheduledAt     DateTime?      // null = immediate/ASAP
+  startedAt       DateTime?
+  completedAt     DateTime?
+
+  // Timestamps
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relations
+  customer        User           @relation("CustomerBookings", fields: [customerId], references: [id])
+  worker          Worker?        @relation("WorkerBookings", fields: [workerId], references: [id])
+  category        ServiceCategory @relation(fields: [categoryId], references: [id])
+  payment         Payment?
+  review          Review?
+  conversation    Conversation?
+
+  @@index([customerId])
+  @@index([workerId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("bookings")
+}
+
+// ============================================
+// Payments
+// ============================================
+
+enum PaymentMethod {
+  MTN_MOMO
+  VODAFONE_CASH
+  CASH
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  bookingId         String        @unique
+
+  amount            Float
+  currency          String        @default("GHS")
+  method            PaymentMethod
+  status            PaymentStatus @default(PENDING)
+
+  // Provider details
+  providerRef       String?       // External transaction ID
+  providerResponse  Json?
+
+  // Timestamps
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  paidAt            DateTime?
+
+  // Relations
+  booking           Booking       @relation(fields: [bookingId], references: [id])
+
+  @@index([status])
+  @@index([providerRef])
+  @@map("payments")
+}
+
+// ============================================
+// Reviews
+// ============================================
+
+model Review {
+  id          String   @id @default(cuid())
+  bookingId   String   @unique
+  customerId  String
+  workerId    String
+
+  rating      Int      // 1-5
+  comment     String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  booking     Booking  @relation(fields: [bookingId], references: [id])
+  customer    User     @relation("ReviewsGiven", fields: [customerId], references: [id])
+  worker      Worker   @relation("ReviewsReceived", fields: [workerId], references: [id])
+
+  @@index([workerId])
+  @@map("reviews")
+}
+
+// ============================================
+// Chat
+// ============================================
+
+model Conversation {
+  id          String   @id @default(cuid())
+  bookingId   String   @unique
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  booking       Booking                   @relation(fields: [bookingId], references: [id])
+  participants  ConversationParticipant[]
+  messages      ChatMessage[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id              String       @id @default(cuid())
+  conversationId  String
+  userId          String
+
+  lastReadAt      DateTime?
+  createdAt       DateTime     @default(now())
+
+  // Relations
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [userId], references: [id])
+
+  @@unique([conversationId, userId])
+  @@map("conversation_participants")
+}
+
+model ChatMessage {
+  id              String       @id @default(cuid())
+  conversationId  String
+  senderId        String
+
+  content         String
+
+  createdAt       DateTime     @default(now())
+
+  // Relations
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender          User         @relation("SentMessages", fields: [senderId], references: [id])
+
+  @@index([conversationId])
+  @@map("chat_messages")
+}
+
+// ============================================
+// Notifications
+// ============================================
+
+enum NotificationType {
+  BOOKING_REQUEST
+  BOOKING_ACCEPTED
+  BOOKING_CANCELLED
+  WORKER_EN_ROUTE
+  SERVICE_COMPLETED
+  PAYMENT_RECEIVED
+  REVIEW_RECEIVED
+  SYSTEM
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  read      Boolean          @default(false)
+
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@map("notifications")
+}
