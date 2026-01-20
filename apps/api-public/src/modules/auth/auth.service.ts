@@ -85,6 +85,9 @@ export async function verifyOtp(input: VerifyOtpInput) {
     throw new AppError(404, 'User not found', 'USER_NOT_FOUND');
   }
 
+  // Development mode: accept "123456" as valid OTP
+  const isDevBypass = env.NODE_ENV === 'development' && input.code === '123456';
+
   // Find valid OTP
   const otp = await prisma.otpCode.findFirst({
     where: {
@@ -95,15 +98,17 @@ export async function verifyOtp(input: VerifyOtpInput) {
     },
   });
 
-  if (!otp) {
+  if (!otp && !isDevBypass) {
     throw new AppError(400, 'Invalid or expired OTP', 'INVALID_OTP');
   }
 
-  // Mark OTP as verified
-  await prisma.otpCode.update({
-    where: { id: otp.id },
-    data: { verified: true },
-  });
+  // Mark OTP as verified (skip if using dev bypass)
+  if (otp) {
+    await prisma.otpCode.update({
+      where: { id: otp.id },
+      data: { verified: true },
+    });
+  }
 
   // Update user status if pending
   if (user.status === 'PENDING_VERIFICATION') {

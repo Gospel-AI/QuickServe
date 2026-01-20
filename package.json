@@ -8,6 +8,7 @@
     "dev:api-public": "pnpm --filter @quickserve/api-public dev",
     "dev:api-admin": "pnpm --filter @quickserve/api-admin dev",
     "dev:mobile": "pnpm --filter @quickserve/mobile dev",
+    "dev:mobile:tunnel": "pnpm --filter @quickserve/mobile dev:tunnel",
     "dev:web-viewer": "pnpm --filter @quickserve/web-viewer dev",
     "dev:web-admin": "pnpm --filter @quickserve/web-admin dev",
     "lint": "turbo run lint",
