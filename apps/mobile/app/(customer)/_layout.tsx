@@ -48,6 +48,28 @@ export default function CustomerLayout() {
           ),
         }}
       />
+      {/* Hidden screens - accessible via navigation but not in tab bar */}
+      <Tabs.Screen
+        name="workers"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="worker-detail"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tabs.Screen
+        name="booking-create"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
     </Tabs>
   );
 }
